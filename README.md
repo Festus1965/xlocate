@@ -9,6 +9,6 @@ The source is available on github.
 Code: LGPL2
 Textures and Models: CC3
 
-Mod dependencies: default, inspire?
+Mod dependencies: default
 
 Download: https://github.com/duane-r/xlocate/archive/master.zip

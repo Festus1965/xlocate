@@ -1,84 +1,129 @@
 -- Xlocate init.lua
--- Copyright Duane Robertson (duane@duanerobertson.com), 2017
+-- Copyright Duane Robertson (duane@duanerobertson.com), 2017, 2019
 -- Distributed under the LGPLv2.1 (https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html)
 
 xlocate = {}
-xlocate.version = "1.0"
-xlocate.path = minetest.get_modpath(minetest.get_current_modname())
-xlocate.world = minetest.get_worldpath()
+mod = xlocate
+mod_name = 'xlocate'
+mod.version = '2.0'
 
 
-local inp = io.open(xlocate.world..'/xlocate_data.txt','r')
-if inp then
-	local d = inp:read('*a')
-	xlocate.db = minetest.deserialize(d)
-	inp:close()
-end
-if not xlocate.db then
-	xlocate.db = {}
-end
-for _, i in pairs({'translocators'}) do
-	if not xlocate.db[i] then
-		xlocate.db[i] = {}
+local xdata = minetest.get_mod_storage()
+
+
+local function get_num_trans()
+	local ntrans = xdata:get_int('number_translocators')
+	if not (ntrans and tonumber(ntrans)) then
+		print(mod_name..': Can\'t get number of translocators.')
+		return 0
 	end
+	return ntrans
 end
 
 
--- Attempt to save data at shutdown (as well as periodically).
-minetest.register_on_shutdown(function()
-	local out = io.open(xlocate.world..'/xlocate_data.txt','w')	
-	if out then
-		print('Xlocate: Saving database at shutdown')
-		out:write(minetest.serialize(xlocate.db))
-		out:close()
-	end
-end)
+local function inc_num_trans()
+	local ntrans = get_num_trans() + 1
+	xdata:set_int('number_translocators', ntrans)
+	return ntrans
+end
 
 
-local last_save_check = 0
-
-minetest.register_globalstep(function(dtime)
-	if not (dtime and type(dtime) == 'number') then
+local function get_item_data(meta)
+	if not meta then
+		print(mod_name..': Bad arguments to get_item_data')
 		return
 	end
 
-	local time = minetest.get_gametime()
-	if not (time and type(time) == 'number') then
+	local id = meta:get_int('id')
+	local owner = meta:get_string('owner')
+
+	return id, owner
+end
+
+
+local function set_item_data(meta, id, owner)
+	if not (meta and id and owner and type(id) == 'number' and type(owner) == 'string') then
+		print(mod_name..': Bad arguments to set_item_data')
 		return
 	end
 
-	if last_save_check and time - last_save_check < 30 then
+	meta:set_int('id', id)
+	meta:set_string('owner', owner)
+end
+
+
+local function get_pair_data(id)
+	if not (id and tonumber(id)) then
+		print(mod_name..': Bad arguments to get_pair_data')
 		return
 	end
 
-	local out = io.open(xlocate.world..'/xlocate_data.txt','w')	
-	if out then
-		out:write(minetest.serialize(xlocate.db))
-		out:close()
+	local spair = xdata:get_string('pair'..tonumber(id))
+	if not spair then
+		print(mod_name..': get_pair_data can\'t get spair')
+		return
+	end
+	local pair = minetest.deserialize(spair)
+	if type(pair) == 'table' then
+		return pair
+	end
+end
+
+
+local function set_pair_data(id, pair)
+	if not (id and pair and type(id) == 'number' and type(pair) == 'table') then
+		print(mod_name..': Bad arguments to set_pair_data')
+		return
 	end
 
-  last_save_check = time
-end)
+	local spair = minetest.serialize(pair)
+	xdata:set_string('pair'..id, spair)
+end
+
+
+local function set_node_data(pos, id, owner, pair)
+	local meta = minetest.get_meta(pos)
+	if not meta then
+		print(mod_name..': set_node_data can\'t get meta')
+		return
+	end
+
+	set_item_data(meta, id, owner)
+
+	if pair then
+		set_pair_data(id, pair)
+	end
+end
+
+
+local function get_node_data(pos, id, owner)
+	local meta = minetest.get_meta(pos)
+	if not meta then
+		print(mod_name..': get_node_data can\'t get meta')
+		return
+	end
+
+	local id, owner = get_item_data(meta)
+	if not (id and owner) then
+		print(mod_name..': get_node_data can\'t get id/owner')
+		return
+	end
+
+	local pair = get_pair_data(id)
+
+	return id, owner, pair
+end
 
 
 local function translocate(pos, node, clicker, itemstack, pointed_thing)
-	if not (pos and clicker and xlocate.db.translocators) then
+	if not (pos and clicker and xdata) then
+		print(mod_name..': Bad arguments to translocate')
 		return
 	end
 
-	local meta = minetest.get_meta(pos)
-	if not meta then
-		return
-	end
-
-	local id = meta:get_string('id')
-	local owner = meta:get_string('owner')
-	if not (id and tonumber(id)) then
-		return
-	end
-
-	local pair = xlocate.db.translocators[tonumber(id)]
+	local id, owner, pair = get_node_data(pos)
 	if not pair or #pair < 2 then
+		print(mod_name..': translocate can\'t get id/owner')
 		return
 	end
 
@@ -95,82 +140,82 @@ local function translocate(pos, node, clicker, itemstack, pointed_thing)
 		-- If the mated translocator doesn't exist, recreate it.
 		minetest.after(1, function()
 			if not owner then
+				print(mod_name..': translocate can\'t get id/owner')
 				return
 			end
 
 			-- If we can't get the node, we can't set it.
 			local node = minetest.get_node_or_nil(pos2)
-			if not node or node.name == 'xlocate:translocator' then
+			if not node or node.name == mod_name..':translocator' then
 				return
 			end
 
-			minetest.set_node(pos2, {name = 'xlocate:translocator'})
-			local meta = minetest.get_meta(pos2)
-			if not meta then
-				return
-			end
+			minetest.set_node(pos2, {name = mod_name..':translocator'})
+			set_node_data(pos2, id, owner)
 
-			meta:set_string('id', id)
-			meta:set_string('owner', owner)
-
-			print('Xlocate: recreated a missing translocator')
+			print(mod_name..': recreated a missing translocator')
 		end)
 	end
 end
 
+
 local function trans_use(itemstack, user, pointed_thing)
 	if not (itemstack and user) then
+		print(mod_name..': Bad arguments to trans_use')
 		return
 	end
 
-	local data = minetest.deserialize(itemstack:get_metadata())
-	if not (data and data.id) then
+	local meta = itemstack:get_meta()
+	local id, owner = get_item_data(meta)
+	if not id then
+		print(mod_name..': trans_use can\'t get id/owner')
 		return
 	end
 
 	local player_name = user:get_player_name()
-	minetest.chat_send_player(player_name, "You see a serial number: "..data.id)
+	minetest.chat_send_player(player_name, 'You see a serial number: ' .. id)
 end
 
+
 local function trans_place(itemstack, placer, pointed_thing)
-	if not (itemstack and placer and pointed_thing and xlocate.db.translocators) then
+	if not (itemstack and placer and pointed_thing and xdata) then
+		print(mod_name..': Bad arguments to trans_place')
 		return
 	end
 
-	local data = minetest.deserialize(itemstack:get_metadata())
-	if not (data and data.id and tonumber(data.id)) then
+	local meta = itemstack:get_meta()
+	local id, owner = get_item_data(meta)
+	if not id then
+		print(mod_name..': trans_place can\'t get id/owner')
 		return
 	end
 
 	local player_name = placer:get_player_name()
-	if not data.owner or data.owner == '' then
-		print('Xlocate: Unowned translocator has been assigned to placer.')
+	if not owner or owner == '' then
+		print(mod_name..': Unowned translocator has been assigned to placer.')
 		data.owner = player_name
 	end
 
 	local pos = pointed_thing.above
-	local pair = xlocate.db.translocators[tonumber(data.id)]
+	local pair = get_pair_data(id)
 	if not pair or #pair > 1 then
-		print('* Xlocate: high error in translocator storage')
+		print(mod_name..': high error in translocator storage')
 		return
 	end
 
 	local ret, place_good = minetest.item_place_node(itemstack, placer, pointed_thing)
 	if place_good then
 		pair[#pair+1] = pos
-		local meta = minetest.get_meta(pos)
-		if not meta then
-			return
-		end
-
-		meta:set_string('id', data.id)
-		meta:set_string('owner', data.owner)
+		set_node_data(pos, id, owner, pair)
 	end
+
 	return ret, place_good
 end
 
+
 local function trans_dig(pos, node, digger)
-	if not (pos and node and digger and xlocate.db.translocators) then
+	if not (pos and node and digger and xdata) then
+		print(mod_name..': Bad arguments to trans_dig')
 		return
 	end
 
@@ -179,28 +224,25 @@ local function trans_dig(pos, node, digger)
 		return
 	end
 
-	local meta = minetest.get_meta(pos)
-	if not meta then
+	local id, owner, pair = get_node_data(pos)
+	if not (id and owner) then
+		print(mod_name..': trans_dig can\'t get id/owner')
 		return
 	end
-
-	local id = meta:get_string('id')
-	local owner = meta:get_string('owner')
 	if owner == '' then
 		owner = player_name
-		print('Xlocate: Unowned translocator has been assigned to taker.')
+		print(mod_name..': Unowned translocator has been assigned to taker.')
 	end
-	local data = { id = id, owner = owner }
-	if not (data and data.id and data.owner == player_name) then
+
+	if owner ~= player_name then
 		local privs = minetest.check_player_privs(player_name, {server=true})
 		if privs then
-			print('Xlocate: Admin has destroyed ['..data.owner..']\'s translocator')
+			print(mod_name..': Admin has destroyed ['..data.owner..']\'s translocator')
 			minetest.remove_node(pos)
 		end
 		return
 	end
 
-	local pair = xlocate.db.translocators[tonumber(data.id)]
 	if not pair or #pair < 1 then
 		print('* Xlocate: low error in translocator storage')
 		minetest.remove_node(pos)
@@ -209,8 +251,7 @@ local function trans_dig(pos, node, digger)
 
 	local inv = digger:get_inventory()
 	local item = ItemStack(node.name)
-	local data_str = minetest.serialize(data)
-	item:set_metadata(data_str)
+	set_item_data(item:get_meta(), id, owner)
 	if not inv:room_for_item('main', item) or not inv:add_item('main', item) then
 		return
 	end
@@ -221,49 +262,41 @@ local function trans_dig(pos, node, digger)
 	else
 		table.remove(pair, 1)
 	end
+
+	set_pair_data(id, pair)
 end
 
+
 local function trans_dest(pos)
-	if not (pos and xlocate.db.translocators) then
+	if not (pos and xdata) then
+		print(mod_name..': Bad arguments to trans_dest')
 		return
 	end
 
-	local meta = minetest.get_meta(pos)
-	if not meta then
+	local id, owner, pair = get_node_data(pos)
+	if not (id and owner and pair) then
+		print(mod_name..': trans_dest can\'t get id/owner')
 		return
 	end
-
-	local id = meta:get_string('id')
-	local owner = meta:get_string('owner')
-	if not (id and owner) then
-		return
-	end
-
-	if not xlocate.db.translocators[tonumber(id)] then
-		return
-	end
-	local pair = table.copy(xlocate.db.translocators[tonumber(id)])
 
 	minetest.after(1, function()
-		if not xlocate.db.translocators[tonumber(id)] or #xlocate.db.translocators[tonumber(id)] < #pair then
-			return
-		end
-		minetest.set_node(pos, {name = 'xlocate:translocator'})
-		local meta = minetest.get_meta(pos)
-		if not meta then
+		-- Destruction was reflected in the database.
+		local pair2 = get_pair_data(id)
+		if #pair2 < #pair then
 			return
 		end
 
-		meta:set_string('id', id)
-		meta:set_string('owner', owner)
+		minetest.set_node(pos, {name = mod_name..':translocator'})
+		set_node_data(pos, id, owner)
 
-		print('Xlocate: recreated a destroyed translocator')
+		print(mod_name..': recreated a destroyed translocator')
 	end)
 end
 
-minetest.register_node("xlocate:translocator", {
+
+minetest.register_node(mod_name..':translocator', {
 	visual = 'mesh',
-	mesh = "warps_translocator.obj",
+	mesh = 'warps_translocator.obj',
 	description = 'Translocator',
 	tiles = {'warps_translocator.png'},
 	drawtype = 'mesh',
@@ -275,9 +308,8 @@ minetest.register_node("xlocate:translocator", {
 	groups = {cracky = 3, oddly_breakable_by_hand = 3},
 	light_source = 13,
 	sounds = default.node_sound_glass_defaults(),
-	stack_max = 1,
 	selection_box = {
-		type = "fixed",
+		type = 'fixed',
 		fixed = {-0.25, -0.5, -0.25,  0.25, 0.5, 0.25}
 	},
 	on_rightclick = translocate,
@@ -287,35 +319,25 @@ minetest.register_node("xlocate:translocator", {
 	on_destruct = trans_dest,
 })
 
-if minetest.get_modpath('inspire') then
-  minetest.register_craft({
-    output = 'xlocate:translocator 2',
-    recipe = {
-      {'', 'default:diamond', ''},
-      {'default:mese_crystal', 'default:diamond', 'default:mese_crystal'},
-      {'inspire:inspiration', 'default:diamond', 'inspire:inspiration'},
-    }
-  })
-else
-  minetest.register_craft({
-    output = 'xlocate:translocator 2',
-    recipe = {
-      {'', 'default:diamond', ''},
-      {'default:mese_crystal', 'default:diamond', 'default:mese_crystal'},
-      {'default:mese', 'default:diamond', 'default:mese'},
-    }
-  })
-end
+minetest.register_craft({
+	output = mod_name..':translocator 2',
+	recipe = {
+		{'', 'default:diamond', ''},
+		{'default:mese_crystal', 'default:diamond', 'default:mese_crystal'},
+		{'', 'default:diamond', ''},
+	}
+})
+
 
 minetest.register_on_craft(function(itemstack, player, old_craft_grid, craft_inv)
-	if not (itemstack and player and xlocate.db.translocators and itemstack:get_name() == "xlocate:translocator") then
+	if not (itemstack and player and xdata and itemstack:get_name() == mod_name..':translocator') then
 		return
 	end
 
-	local data = {}
-	data.id = string.format('%d', #xlocate.db.translocators+1)
-	data.owner = player:get_player_name()
-	xlocate.db.translocators[#xlocate.db.translocators+1] = {}
-	local data_str = minetest.serialize(data)
-	itemstack:set_metadata(data_str)
+	local ntrans = inc_num_trans()
+	local owner = player:get_player_name()
+	local meta = itemstack:get_meta()
+	set_item_data(meta, ntrans, owner)
+
+	set_pair_data(ntrans, {})
 end)
