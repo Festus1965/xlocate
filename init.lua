@@ -193,7 +193,7 @@ local function trans_place(itemstack, placer, pointed_thing)
 	local player_name = placer:get_player_name()
 	if not owner or owner == '' then
 		print(mod_name..': Unowned translocator has been assigned to placer.')
-		data.owner = player_name
+		owner = player_name
 	end
 
 	local pos = pointed_thing.above
@@ -237,7 +237,7 @@ local function trans_dig(pos, node, digger)
 	if owner ~= player_name then
 		local privs = minetest.check_player_privs(player_name, {server=true})
 		if privs then
-			print(mod_name..': Admin has destroyed ['..data.owner..']\'s translocator')
+			print(mod_name..': Admin has destroyed ['..owner..']\'s translocator')
 			minetest.remove_node(pos)
 		end
 		return
