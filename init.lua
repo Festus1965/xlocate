@@ -3,8 +3,8 @@
 -- Distributed under the LGPLv2.1 (https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html)
 
 xlocate = {}
-mod = xlocate
-mod_name = 'xlocate'
+local mod = xlocate
+local mod_name = 'xlocate'
 mod.version = '2.0'
 
 
@@ -146,7 +146,7 @@ local function translocate(pos, node, clicker, itemstack, pointed_thing)
 
 			-- If we can't get the node, we can't set it.
 			local node = minetest.get_node_or_nil(pos2)
-			if not node or node.name == mod_name..':translocator' then
+			if node and node.name == mod_name..':translocator' then
 				return
 			end
 
