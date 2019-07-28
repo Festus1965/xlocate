@@ -8,7 +8,9 @@ local mod_name = 'xlocate'
 mod.version = '2.0'
 
 mod.improv_teleport_selection = {}
-mod.safe_nodes = { }
+mod.safe_nodes = {
+	['default:snow'] = true,
+}
 
 
 do
@@ -203,6 +205,8 @@ function mod.improv_teleport_to(player, location)
 		return
 	end
 
+	player:set_wielded_item(nil)
+
 	local player_pos = player:get_pos()
 	local pos
 	if location == 'far_away' then
@@ -275,6 +279,7 @@ function mod.improv_teleport_to(player, location)
 			local n = minetest.get_node_or_nil(pos)
 			if minetest.get_modpath('tnt') and n
 			and n.name and not mod.safe_nodes[n.name] then
+				print(mod_name..': Teleportation accident: ' .. n.name)
 				local upos = table.copy(pos)
 				upos.y = upos.y - 1
 				minetest.remove_node(pos)
