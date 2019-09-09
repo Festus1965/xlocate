@@ -165,9 +165,10 @@ function mod.improv_teleport_menu(itemstack, user, pointed_thing)
 		local locations = { ['far_away'] = true, }
 
 		if minetest.get_modpath('mapgen') then
-			for _, map in pairs(mapgen.world_map) do
-				if map.random_teleportable then
-					locations[map.name] = true
+			for _, map in pairs(mapgen.registered_realms) do
+				if not map.no_random_teleport then
+					local name = map.name or map.mapgen
+					locations[name] = true
 				end
 			end
 		end
@@ -183,7 +184,9 @@ function mod.improv_teleport_menu(itemstack, user, pointed_thing)
 
 	local list_loc = {}
 	for k, v in pairs(mod.improv_teleport_locations) do
-		local s = v:gsub('_', ' '):gsub('%f[%a]%a', string.upper)
+		local s = v:gsub('^tg_', '')
+		s = s:gsub('_', ' ')
+		s = s:gsub('%f[%a]%a', string.upper)
 		list_loc[k] = s
 	end
 
@@ -217,9 +220,9 @@ function mod.improv_teleport_to(player, location)
 		)
 	elseif minetest.get_modpath('mapgen') then
 		local maps = {}
-		for _, map in pairs(mapgen.world_map) do
-			if map.name == location then
-				if map.random_teleportable then
+		for _, map in pairs(mapgen.registered_realms) do
+			if map.name == location or map.mapgen == location then
+				if not map.no_random_teleport then
 					table.insert(maps, map)
 				end
 			end
@@ -231,8 +234,8 @@ function mod.improv_teleport_to(player, location)
 
 		local map = maps[math.random(#maps)]
 
-		local map_min = vector.add(vector.multiply(map.map_minp, 80), 32)
-		local map_max = vector.add(vector.multiply(vector.add(map.map_maxp, 1), 80), 33)
+		local map_min = table.copy(map.realm_minp)
+		local map_max = table.copy(map.realm_maxp)
 
 		player_pos.x = math.min(map_max.x, math.max(map_min.x, player_pos.x))
 		player_pos.z = math.min(map_max.z, math.max(map_min.z, player_pos.z))
@@ -246,9 +249,10 @@ function mod.improv_teleport_to(player, location)
 		pos.x = math.min(map_max.x, math.max(map_min.x, pos.x))
 		pos.z = math.min(map_max.z, math.max(map_min.z, pos.z))
 
-		if map.mapgen and map.mapgen.get_spawn_level then
+		if map.mapgen and mapgen.registered_spawns[map.mapgen] then
 			for i = 1, 1000 do
-				pos.y = map.mapgen:get_spawn_level(map, pos.x, pos.z, true)
+				pos.y = mapgen.registered_spawns[map.mapgen](map, pos.x, pos.z, true)
+				--print(dump(pos.y))
 				if pos.y and pos.y <= map_max.y and pos.y >= map_min.y then
 					break
 				end
@@ -265,9 +269,9 @@ function mod.improv_teleport_to(player, location)
 			and map.water_level > map_min.y and map.water_level < map_max.y then
 				pos.y = map.water_level + 20
 			else
-				local c = math.random(map.map_minp.y, map.map_maxp.y)
-				pos.y = c * 80 + math.random(40) - 12
-				print(c, pos.y)
+				local c = math.random(map.realm_minp.y, map.realm_maxp.y)
+				--print(c, pos.y)
+				pos.y = c
 			end
 		end
 	end
