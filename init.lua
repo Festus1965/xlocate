@@ -250,10 +250,11 @@ function mod.improv_teleport_to(player, location)
 		pos.z = math.min(map_max.z, math.max(map_min.z, pos.z))
 
 		if map.mapgen and mapgen.registered_spawns[map.mapgen] then
-			for i = 1, 1000 do
+			for i = 1, 4000 do
 				pos.y = mapgen.registered_spawns[map.mapgen](map, pos.x, pos.z, true)
 				--print(dump(pos.y))
-				if pos.y and pos.y <= map_max.y and pos.y >= map_min.y then
+				if pos.y and pos.y <= map_max.y and pos.y >= map_min.y
+				and pos.y > map.sealevel then
 					break
 				end
 
